@@ -1,0 +1,111 @@
+!nvidia-smi
+import os
+HOME = os.getcwd()
+print(HOME)
+!git clone https://github.com/SkalskiP/yolov9.git
+%cd yolov9
+!pip install -r requirements.txt -q
+!pip install -q roboflow
+!wget -P {HOME}/weights -q https://github.com/WongKinYiu/yolov9/releases/download/v0.1/yolov9-c.pt
+!wget -P {HOME}/weights -q https://github.com/WongKinYiu/yolov9/releases/download/v0.1/yolov9-e.pt
+!wget -P {HOME}/weights -q https://github.com/WongKinYiu/yolov9/releases/download/v0.1/gelan-c.pt
+!wget -P {HOME}/weights -q https://github.com/WongKinYiu/yolov9/releases/download/v0.1/gelan-e.pt
+!ls -la {HOME}/weights
+!wget -P {HOME}/data -q https://media.roboflow.com/notebooks/examples/dog.jpeg
+SOURCE_IMAGE_PATH = f"{HOME}/dog.jpeg"
+!python detect.py --weights {HOME}/weights/gelan-c.pt --conf 0.1 --source {HOME}/data/dog.jpeg --device 0
+from IPython.display import Image
+
+Image(filename=f"{HOME}/yolov9/runs/detect/exp/dog.jpeg", width=600)
+!python detect.py --weights {HOME}/weights/yolov9-e.pt --conf 0.1 --source {HOME}/data/dog.jpeg --device 0
+from IPython.display import Image
+
+Image(filename=f"{HOME}/yolov9/runs/detect/exp2/dog.jpeg", width=600)
+%cd {HOME}/yolov9
+import roboflow
+roboflow.login()
+rf = roboflow.Roboflow()
+project = rf.workspace("cancer-anotation").project("paps-smear-cells")
+version = project.version(4)
+dataset = version.download("yolov9")
+%cd {HOME}/yolov9
+
+!python train.py \
+--batch 16 --epochs 25 --img 640 --device 0 --min-items 0 --close-mosaic 15 \
+--data {dataset.location}/data.yaml \
+--weights {HOME}/weights/gelan-c.pt \
+--cfg models/detect/gelan-c.yaml \
+--hyp hyp.scratch-high.yaml
+!ls {HOME}/yolov9/runs/train/exp/
+from IPython.display import Image
+
+Image(filename=f"{HOME}/yolov9/runs/train/exp/results.png", width=1000)
+from IPython.display import Image
+
+Image(filename=f"{HOME}/yolov9/runs/train/exp/confusion_matrix.png", width=1000)
+from IPython.display import Image
+
+Image(filename=f"{HOME}/yolov9/runs/train/exp/val_batch0_pred.jpg", width=1000)
+%cd {HOME}/yolov9
+
+!python val.py \
+--img 640 --batch 32 --conf 0.001 --iou 0.7 --device 0 \
+--data {dataset.location}/data.yaml \
+--weights {HOME}/yolov9/runs/train/exp/weights/best.pt
+!python detect.py \
+--img 1280 --conf 0.1 --device 0 \
+--weights {HOME}/yolov9/runs/train/exp/weights/best.pt \
+--source {dataset.location}/test/images
+import glob
+
+from IPython.display import Image, display
+
+for image_path in glob.glob(f'{HOME}/yolov9/runs/detect/exp3/*.jpg')[:2]:
+      display(Image(filename=image_path, width=600))
+import glob
+
+from IPython.display import Image, display
+
+for image_path in glob.glob(f'{HOME}/yolov9/runs/detect/exp3/*.jpg')[:2]:
+      display(Image(filename=image_path, width=600))
+!pip install -q inference supervision
+import cv2
+import random
+import getpass
+
+import supervision as sv
+
+from inference import get_model
+import cv2
+import random
+import getpass
+
+import supervision as sv
+
+from inference import get_model
+
+%matplotlib inline
+version.deploy(model_type="yolov9", model_path=f"{HOME}/yolov9/runs/train/exp")
+ROBOFLOW_API_KEY = getpass.getpass()
+
+model = get_model(model_id="football-players-detection-3zvbc/8", api_key=ROBOFLOW_API_KEY)
+  image_paths = sv.list_files_with_extensions(
+    directory=f"{dataset.location}/test/images",
+    extensions=['png', 'jpg', 'jpeg']
+)
+image_path = random.choice(image_paths)
+image = cv2.imread(image_path)
+
+result = model.infer(image, confidence=0.1)[0]
+detections = sv.Detections.from_inference(result)
+label_annotator = sv.LabelAnnotator(text_color=sv.Color.BLACK)
+bounding_box_annotator = sv.BoundingBoxAnnotator()
+
+annotated_image = image.copy()
+annotated_image = bounding_box_annotator.annotate(scene=annotated_image, detections=detections)
+annotated_image = label_annotator.annotate(scene=annotated_image, detections=detections)
+
+sv.plot_image(annotated_image)
+
+
+%matplotlib inline
